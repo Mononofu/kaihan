@@ -10,6 +10,7 @@ struct RawContent {
     // Markdown contents of the file.
     markdown: String,
     metadata: HashMap<String, String>,
+    timestamp: chrono::NaiveDateTime,
 }
 
 struct StaticContent {
@@ -53,10 +54,20 @@ fn read_source_files(current: &Path, prefix: &Path) -> Result<Vec<RawFile>> {
                         })
                         .collect::<Result<HashMap<String, String>>>()?;
 
+                    let mut date = metadata
+                        .get("date")
+                        .ok_or(anyhow!("Must have date metadata: {:?}", metadata))?
+                        .clone();
+                    if !date.contains(" ") {
+                        date.push_str(" 00:00");
+                    }
+                    let date = chrono::NaiveDateTime::parse_from_str(&date, "%Y-%m-%d %H:%M")?;
+
                     files.push(RawFile::Content(RawContent {
                         path: prefix.join(path.file_stem().unwrap()),
                         metadata,
                         markdown: markdown.to_owned(),
+                        timestamp: date,
                     }))
                 }
                 "py" => {}
@@ -146,7 +157,6 @@ fn render_content(f: &RawContent, output_path: &Path) -> Result<()> {
         events.extend(footnote_evens);
     }
 
-    // TODO(swj): handle tables, footnotes
     let mut content = String::new();
     pulldown_cmark::html::push_html(&mut content, events.into_iter());
 
@@ -154,6 +164,7 @@ fn render_content(f: &RawContent, output_path: &Path) -> Result<()> {
 
     std::fs::create_dir_all(dst.parent().unwrap())?;
 
+    // TODO(swj): use real jinja templates
     let html_output = format!(
         "<!DOCTYPE html>
 <html lang='us'>
