@@ -33,6 +33,7 @@ struct RawContent {
     metadata: HashMap<String, String>,
     timestamp: chrono::NaiveDateTime,
     status: ContentStatus,
+    tags: Vec<String>,
 }
 
 struct StaticContent {
@@ -96,6 +97,15 @@ fn read_source_files(current: &Path, prefix: &Path) -> Result<Vec<RawFile>> {
                     } else {
                         prefix.join(path.file_stem().unwrap())
                     };
+                    let tags = if let Some(tag_str) = metadata.get("tags") {
+                        tag_str
+                            .split(",")
+                            .map(|t| t.trim().to_owned())
+                            .filter(|t| !t.is_empty())
+                            .collect()
+                    } else {
+                        vec![]
+                    };
 
                     files.push(RawFile::Content(RawContent {
                         path: path,
@@ -103,6 +113,7 @@ fn read_source_files(current: &Path, prefix: &Path) -> Result<Vec<RawFile>> {
                         markdown: markdown.to_owned(),
                         timestamp: date,
                         status,
+                        tags,
                     }))
                 }
                 "py" => {}
@@ -261,7 +272,8 @@ fn main() -> Result<()> {
 
     let files = read_source_files(blog_path, Path::new(""))?;
 
-    let mut collections: HashMap<&str, Vec<&RawContent>> = HashMap::new();
+    let mut by_layout: HashMap<&str, Vec<&RawContent>> = HashMap::new();
+    let mut by_tag: HashMap<&str, Vec<&RawContent>> = HashMap::new();
     for f in files.iter() {
         if let RawFile::Content(c) = f {
             if c.status != ContentStatus::Public {
@@ -269,14 +281,17 @@ fn main() -> Result<()> {
             }
 
             if let Some(layout) = c.metadata.get("layout") {
-                collections.entry(layout).or_default().push(c);
+                by_layout.entry(layout).or_default().push(c);
             }
+            c.tags
+                .iter()
+                .for_each(|t| by_tag.entry(t).or_default().push(c));
         }
     }
-    collections
+    by_layout
         .values_mut()
         .for_each(|v| v.sort_by(|a, b| (&a.path, a.timestamp).cmp(&(&b.path, b.timestamp))));
-    for (layout, entries) in collections.iter() {
+    for (layout, entries) in by_layout.iter() {
         println!("{:} {:}s", entries.len(), layout);
     }
 
