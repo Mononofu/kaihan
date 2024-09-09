@@ -1,5 +1,5 @@
 use anyhow::{anyhow, bail, Result};
-use std::borrow::Borrow;
+use pulldown_cmark::{Event, Tag, TagEnd};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -93,18 +93,19 @@ fn render_content(f: &RawContent, output_path: &Path) -> Result<()> {
 
     let mut options = pulldown_cmark::Options::empty();
     options.insert(pulldown_cmark::Options::ENABLE_TABLES);
+    options.insert(pulldown_cmark::Options::ENABLE_MATH);
     options.insert(pulldown_cmark::Options::ENABLE_FOOTNOTES);
 
     let parser = pulldown_cmark::Parser::new_ext(&f.markdown, options);
 
     // TODO(swj): Support link archiving.
     let parser = parser.map(|e| match e {
-        pulldown_cmark::Event::Start(pulldown_cmark::Tag::Link {
+        Event::Start(pulldown_cmark::Tag::Link {
             link_type,
             dest_url,
             title,
             id,
-        }) => pulldown_cmark::Event::Start(pulldown_cmark::Tag::Link {
+        }) => Event::Start(pulldown_cmark::Tag::Link {
             link_type,
             dest_url: pulldown_cmark::CowStr::Boxed(
                 dest_url.trim_start_matches("!").to_owned().into_boxed_str(),
@@ -115,9 +116,39 @@ fn render_content(f: &RawContent, output_path: &Path) -> Result<()> {
         _ => e,
     });
 
+    // println!("Path: {:?}", f.path);
+    let mut in_footnote = false;
+    let mut events = vec![];
+    let mut footnote_evens = vec![];
+
+    // Move footnotes to the end of the post.
+    parser.for_each(|e| {
+        if let Event::Start(Tag::FootnoteDefinition(_)) = e {
+            in_footnote = true;
+        }
+        let footnote_done = if let Event::End(TagEnd::FootnoteDefinition) = e {
+            true
+        } else {
+            false
+        };
+        if in_footnote {
+            footnote_evens.push(e);
+        } else {
+            events.push(e);
+        }
+        if footnote_done {
+            in_footnote = false;
+        }
+    });
+
+    if !footnote_evens.is_empty() {
+        events.push(Event::Rule);
+        events.extend(footnote_evens);
+    }
+
     // TODO(swj): handle tables, footnotes
     let mut content = String::new();
-    pulldown_cmark::html::push_html(&mut content, parser);
+    pulldown_cmark::html::push_html(&mut content, events.into_iter());
 
     let dst = output_path.join(&f.path).with_extension("html");
 
@@ -129,12 +160,30 @@ fn render_content(f: &RawContent, output_path: &Path) -> Result<()> {
 
 <head>
   <meta charset='UTF-8'>
+  <title>{title}</title>
   <style type='text/css'>
   {pygments_css}
   {style_css}
   </style>
 
-  <title>{title}</title>
+  <link rel='preload' href='/css/katex.min.css'  as='style' onload=\"this.onload=null;this.rel='stylesheet'\">
+  <script defer src='/js/katex.min.js'></script>
+    <script>
+    const katexOptions = {{
+      delimiters: [
+          {{left: '$$', right: '$$', display: true}},
+          {{left: '$', right: '$', display: false}},
+      ],
+      throwOnError : false
+    }};
+    document.addEventListener('DOMContentLoaded', function() {{
+        for (const e of document.getElementsByClassName('math')) katex.render(e.textContent, e);
+    }});
+    // document.addEventListener('DOMContentLoaded', function() {{
+    //     katex.render(document.body, katexOptions);
+    // }});
+</script>
+
 </head>
 <body>
 
