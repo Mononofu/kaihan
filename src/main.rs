@@ -165,7 +165,7 @@ fn render_content(f: &RawContent, output_path: &Path) -> Result<()> {
     // println!("Path: {:?}", f.path);
     let mut in_footnote = false;
     let mut events = vec![];
-    let mut footnote_evens = vec![];
+    let mut footnote_events = vec![];
 
     // Move footnotes to the end of the post.
     parser.for_each(|e| {
@@ -178,7 +178,7 @@ fn render_content(f: &RawContent, output_path: &Path) -> Result<()> {
             false
         };
         if in_footnote {
-            footnote_evens.push(e);
+            footnote_events.push(e);
         } else {
             events.push(e);
         }
@@ -187,9 +187,9 @@ fn render_content(f: &RawContent, output_path: &Path) -> Result<()> {
         }
     });
 
-    if !footnote_evens.is_empty() {
+    if !footnote_events.is_empty() {
         events.push(Event::Rule);
-        events.extend(footnote_evens);
+        events.extend(footnote_events);
     }
 
     let mut content = String::new();
