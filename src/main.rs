@@ -150,98 +150,122 @@ fn read_source_files(current: &Path, prefix: &Path) -> Result<Vec<RawFile>> {
     Ok(files)
 }
 
-impl RawContent {
-    fn to_html(&self, output_path: Option<&Path>) -> Result<String> {
-        let mut options = pulldown_cmark::Options::empty();
-        options.insert(pulldown_cmark::Options::ENABLE_TABLES);
-        options.insert(pulldown_cmark::Options::ENABLE_MATH);
-        options.insert(pulldown_cmark::Options::ENABLE_FOOTNOTES);
-    
-        let parser = pulldown_cmark::Parser::new_ext(&self.markdown, options);
-    
-        let parser = parser.map(|e| match e {
+fn to_md_events(markdown: &str) -> Result<Vec<Event>> {
+    let mut options = pulldown_cmark::Options::empty();
+    options.insert(pulldown_cmark::Options::ENABLE_TABLES);
+    options.insert(pulldown_cmark::Options::ENABLE_MATH);
+    options.insert(pulldown_cmark::Options::ENABLE_FOOTNOTES);
+
+    let parser = pulldown_cmark::Parser::new_ext(&markdown, options);
+
+    let parser = parser.map(|e| match e {
+        Event::Start(pulldown_cmark::Tag::Link {
+            link_type,
+            dest_url,
+            title,
+            id,
+        }) => {
+            // TODO(swj): Support link archiving.
+            let url = dest_url.trim_start_matches("!").to_owned();
+
             Event::Start(pulldown_cmark::Tag::Link {
                 link_type,
-                dest_url,
+                dest_url: pulldown_cmark::CowStr::Boxed(url.into_boxed_str()),
                 title,
                 id,
-            }) => {
-                // TODO(swj): Support link archiving.
-                let url = dest_url.trim_start_matches("!").to_owned();
-    
+            })
+        }
+        _ => e,
+    });
+
+    // println!("Path: {:?}", f.path);
+    let mut in_footnote = false;
+    let mut events = vec![];
+    let mut footnote_events = vec![];
+
+    // Move footnotes to the end of the post.
+    parser.for_each(|e| {
+        if let Event::Start(Tag::FootnoteDefinition(_)) = e {
+            in_footnote = true;
+        }
+        let footnote_done = if let Event::End(TagEnd::FootnoteDefinition) = e {
+            true
+        } else {
+            false
+        };
+        if in_footnote {
+            footnote_events.push(e);
+        } else {
+            events.push(e);
+        }
+        if footnote_done {
+            in_footnote = false;
+        }
+    });
+
+    if !footnote_events.is_empty() {
+        events.push(Event::Rule);
+        events.extend(footnote_events);
+    }
+
+    Ok(events)
+}
+
+fn to_html(markdown: &str) -> Result<String> {
+    let events = to_md_events(markdown)?;
+    let mut content = String::new();
+    pulldown_cmark::html::push_html(&mut content, events.into_iter());
+    Ok(content)
+}
+
+impl RawContent {
+    fn validate_links(&self, output_path: &Path) -> Result<()> {
+        let events = to_md_events(&self.markdown)?;
+        for e in events {
+            if let Event::Start(pulldown_cmark::Tag::Link { dest_url: url, .. }) = e {
                 // Verify that internal links are valid.
                 if url.starts_with("/") {
                     let url = url.trim_matches('/');
                     // Strip # anchor links.
                     let url = url.split_once('#').map(|(a, b)| a).unwrap_or(url);
-                    if let Some(p) = output_path {
-                        let target_file = p.join(&url);
 
+                    let target_file = output_path.join(&url);
                     if !target_file.exists() {
-                        error!("Dangling internal URL in {:?}: {:}, expected {:?}", self.path, url, target_file);
-                    }
-
+                        error!(
+                            "Dangling internal URL in {:?}: {:}, expected {:?}",
+                            self.path, url, target_file
+                        );
                     }
                 } else if !url.starts_with("http") && !url.starts_with("mailto") {
                     error!("Interal URLs should be absolute {:?}, external URLs should start with https://, got: {:}", self.path, url);
                 }
-    
-                Event::Start(pulldown_cmark::Tag::Link {
-                    link_type,
-                    dest_url: pulldown_cmark::CowStr::Boxed(url.into_boxed_str()),
-                    title,
-                    id,
-                })
             }
-            _ => e,
-        });
-    
-        // println!("Path: {:?}", f.path);
-        let mut in_footnote = false;
-        let mut events = vec![];
-        let mut footnote_events = vec![];
-    
-        // Move footnotes to the end of the post.
-        parser.for_each(|e| {
-            if let Event::Start(Tag::FootnoteDefinition(_)) = e {
-                in_footnote = true;
-            }
-            let footnote_done = if let Event::End(TagEnd::FootnoteDefinition) = e {
-                true
-            } else {
-                false
-            };
-            if in_footnote {
-                footnote_events.push(e);
-            } else {
-                events.push(e);
-            }
-            if footnote_done {
-                in_footnote = false;
-            }
-        });
-    
-        if !footnote_events.is_empty() {
-            events.push(Event::Rule);
-            events.extend(footnote_events);
         }
-    
-        let mut content = String::new();
-        pulldown_cmark::html::push_html(&mut content, events.into_iter());
-        Ok(content)
+
+        Ok(())
     }
 
-    fn to_article(&self, output_path: Option<&Path>) -> Result<Article> {
-        let title = self.metadata.get("title").ok_or(anyhow!("Must have title!"))?;
-        let content = self.to_html(output_path)?;
-        let summary = content.split_whitespace().take(100).collect::<Vec<_>>().join(" ");
+    fn to_article(&self) -> Result<Article> {
+        let title = self
+            .metadata
+            .get("title")
+            .ok_or(anyhow!("Must have title!"))?;
+
+        let mut summary_markdown = self
+            .markdown
+            .split_inclusive([' ', '\n'])
+            .take(100)
+            .collect::<Vec<_>>()
+            .join("");
+        summary_markdown.push_str("...");
+
         Ok(Article {
             title: title.clone(),
             url: self.path.to_str().unwrap().to_owned(),
-            summary,
-            content,
+            summary: to_html(&summary_markdown)?,
+            content: to_html(&self.markdown)?,
             tags: self.tags.clone(),
-            locale_date: self.timestamp.format("%a %d %B %Y").to_string()
+            locale_date: self.timestamp.format("%a %d %B %Y").to_string(),
         })
     }
 }
@@ -249,7 +273,7 @@ impl RawContent {
 fn render_content(
     f: &RawContent,
     output_path: &Path,
-    jinja: &minijinja::Environment, 
+    jinja: &minijinja::Environment,
     base_context: &minijinja::Value,
 ) -> Result<()> {
     let output_path = if f.status == ContentStatus::Draft {
@@ -263,7 +287,7 @@ fn render_content(
 
     let tmpl = jinja.get_template("article.html")?;
     let html_output = tmpl.render(minijinja::context! {
-    article => f.to_article(None)?,
+    article => f.to_article()?,
     ..base_context.clone()})?;
 
     std::fs::write(dst, &html_output)?;
@@ -328,7 +352,7 @@ fn main() -> Result<()> {
 
     let render_path = Path::new("/Users/mononofu/tmp/blog/");
 
-    std::fs::remove_dir_all(render_path)?;
+    std::fs::remove_dir_all(render_path);
     std::fs::create_dir_all(render_path)?;
 
     let files = read_source_files(&content_path, Path::new(""))?;
@@ -362,15 +386,16 @@ fn main() -> Result<()> {
         .unwrap()
         .iter()
         .rev()
-        .map(|p| p.to_article(None))
+        .map(|p| p.to_article())
         .collect::<Result<Vec<Article>>>()?;
 
     let mut pages = by_layout
-    .get("page")
-    .unwrap().iter()
-    .map(|p| p.to_article(None))
-    .collect::<Result<Vec<Article>>>()?;
-pages.sort_by(|a, b| a.title.cmp(&b.title));
+        .get("page")
+        .unwrap()
+        .iter()
+        .map(|p| p.to_article())
+        .collect::<Result<Vec<Article>>>()?;
+    pages.sort_by(|a, b| a.title.cmp(&b.title));
 
     let base_context = minijinja::context! {
         AUTHOR => "Julian Schrittwieser",
@@ -409,7 +434,7 @@ pages.sort_by(|a, b| a.title.cmp(&b.title));
     // Run again to verify internal links.
     for f in files.iter() {
         if let RawFile::Content(c) = f {
-            c.to_article(Some(render_path))?;
+            c.validate_links(render_path)?;
         }
     }
 
