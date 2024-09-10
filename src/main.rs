@@ -419,6 +419,26 @@ fn main() -> Result<()> {
     ..base_context.clone()})?;
     std::fs::write(render_path.join("archives.html"), archives)?;
 
+    let max_step = 5f32;
+    let max_count = by_tag.values().map(|ps| ps.len()).max().unwrap_or(1) as f32;
+    let tag_counts = by_tag
+        .iter()
+        .map(|(t, posts)| {
+            (
+                t,
+                ((max_step - 1f32) * (1f32 - (posts.len() as f32).ln() / max_count.ln().max(1f32)))
+                    .floor() as i32
+                    + 1,
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let tmpl = jinja.get_template("tags.html")?;
+    let tags = tmpl.render(minijinja::context! {
+    tag_cloud => tag_counts,
+    ..base_context.clone()})?;
+    std::fs::write(render_path.join("tags.html"), tags)?;
+
     // Run once to render and save.
     for f in files.iter() {
         match f {
