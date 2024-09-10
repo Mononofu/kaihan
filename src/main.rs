@@ -439,6 +439,23 @@ fn main() -> Result<()> {
     ..base_context.clone()})?;
     std::fs::write(render_path.join("tags.html"), tags)?;
 
+    std::fs::create_dir_all(render_path.join("tags"))?;
+    for (tag, mut posts) in by_tag {
+        posts.sort_by(|a, b| (&a.path, a.timestamp).cmp(&(&b.path, b.timestamp)));
+        let articles = posts
+            .iter()
+            .rev()
+            .take(10)
+            .map(|p| p.to_article())
+            .collect::<Result<_>>()?;
+        let tmpl = jinja.get_template("tag.html")?;
+        let tags = tmpl.render(minijinja::context! {
+        tag => tag,
+        articles_page => ArticlesPage{object_list: articles},
+        ..base_context.clone()})?;
+        std::fs::write(render_path.join("tags").join(format!("{tag:}.html")), tags)?;
+    }
+
     // Run once to render and save.
     for f in files.iter() {
         match f {
