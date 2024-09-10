@@ -150,93 +150,108 @@ fn read_source_files(current: &Path, prefix: &Path) -> Result<Vec<RawFile>> {
     Ok(files)
 }
 
+impl RawContent {
+    fn to_html(&self, output_path: Option<&Path>) -> Result<String> {
+        let mut options = pulldown_cmark::Options::empty();
+        options.insert(pulldown_cmark::Options::ENABLE_TABLES);
+        options.insert(pulldown_cmark::Options::ENABLE_MATH);
+        options.insert(pulldown_cmark::Options::ENABLE_FOOTNOTES);
+    
+        let parser = pulldown_cmark::Parser::new_ext(&self.markdown, options);
+    
+        let parser = parser.map(|e| match e {
+            Event::Start(pulldown_cmark::Tag::Link {
+                link_type,
+                dest_url,
+                title,
+                id,
+            }) => {
+                // TODO(swj): Support link archiving.
+                let url = dest_url.trim_start_matches("!").to_owned();
+    
+                // Verify that internal links are valid.
+                if url.starts_with("/") {
+                    let url = url.trim_matches('/');
+                    // Strip # anchor links.
+                    let url = url.split_once('#').map(|(a, b)| a).unwrap_or(url);
+                    if let Some(p) = output_path {
+                        let target_file = p.join(&url);
+
+                    if !target_file.exists() {
+                        error!("Dangling internal URL in {:?}: {:}, expected {:?}", self.path, url, target_file);
+                    }
+
+                    }
+                } else if !url.starts_with("http") && !url.starts_with("mailto") {
+                    error!("Interal URLs should be absolute {:?}, external URLs should start with https://, got: {:}", self.path, url);
+                }
+    
+                Event::Start(pulldown_cmark::Tag::Link {
+                    link_type,
+                    dest_url: pulldown_cmark::CowStr::Boxed(url.into_boxed_str()),
+                    title,
+                    id,
+                })
+            }
+            _ => e,
+        });
+    
+        // println!("Path: {:?}", f.path);
+        let mut in_footnote = false;
+        let mut events = vec![];
+        let mut footnote_events = vec![];
+    
+        // Move footnotes to the end of the post.
+        parser.for_each(|e| {
+            if let Event::Start(Tag::FootnoteDefinition(_)) = e {
+                in_footnote = true;
+            }
+            let footnote_done = if let Event::End(TagEnd::FootnoteDefinition) = e {
+                true
+            } else {
+                false
+            };
+            if in_footnote {
+                footnote_events.push(e);
+            } else {
+                events.push(e);
+            }
+            if footnote_done {
+                in_footnote = false;
+            }
+        });
+    
+        if !footnote_events.is_empty() {
+            events.push(Event::Rule);
+            events.extend(footnote_events);
+        }
+    
+        let mut content = String::new();
+        pulldown_cmark::html::push_html(&mut content, events.into_iter());
+        Ok(content)
+    }
+
+    fn to_article(&self, output_path: Option<&Path>) -> Result<Article> {
+        let title = self.metadata.get("title").ok_or(anyhow!("Must have title!"))?;
+        let content = self.to_html(output_path)?;
+        let summary = content.split_whitespace().take(100).collect::<Vec<_>>().join(" ");
+        Ok(Article {
+            title: title.clone(),
+            url: self.path.to_str().unwrap().to_owned(),
+            summary,
+            content,
+            tags: self.tags.clone(),
+            locale_date: self.timestamp.format("%a %d %B %Y").to_string()
+        })
+    }
+}
+
 fn render_content(
     f: &RawContent,
     output_path: &Path,
-    jinja: &minijinja::Environment,
-    validate_local_urls: bool,
+    jinja: &minijinja::Environment, 
+    base_context: &minijinja::Value,
 ) -> Result<()> {
-    let title = f.metadata.get("title").ok_or(anyhow!("Must have title!"))?;
-
-    let style_css = std::fs::read_to_string(
-        "/Users/mononofu/Library/CloudStorage/Dropbox/blog/themes/svbhack/templates/style.css",
-    )?;
-    let pygments_css = std::fs::read_to_string(
-        "/Users/mononofu/Library/CloudStorage/Dropbox/blog/themes/svbhack/templates/pygments.css",
-    )?;
-
-    let mut options = pulldown_cmark::Options::empty();
-    options.insert(pulldown_cmark::Options::ENABLE_TABLES);
-    options.insert(pulldown_cmark::Options::ENABLE_MATH);
-    options.insert(pulldown_cmark::Options::ENABLE_FOOTNOTES);
-
-    let parser = pulldown_cmark::Parser::new_ext(&f.markdown, options);
-
-    let parser = parser.map(|e| match e {
-        Event::Start(pulldown_cmark::Tag::Link {
-            link_type,
-            dest_url,
-            title,
-            id,
-        }) => {
-            // TODO(swj): Support link archiving.
-            let url = dest_url.trim_start_matches("!").to_owned();
-
-            // Verify that internal links are valid.
-            if url.starts_with("/") {
-                let url = url.trim_matches('/');
-                // Strip # anchor links.
-                let url = url.split_once('#').map(|(a, b)| a).unwrap_or(url);
-                if validate_local_urls && !output_path.join(&url).exists() {
-                    error!("Dangling internal URL in {:?}: {:}, expected {:?}", f.path, url, output_path.join(&url));
-                }
-            } else if !url.starts_with("http") && !url.starts_with("mailto") {
-                error!("Interal URLs should be absolute {:?}, external URLs should start with https://, got: {:}", f.path, url);
-            }
-
-            Event::Start(pulldown_cmark::Tag::Link {
-                link_type,
-                dest_url: pulldown_cmark::CowStr::Boxed(url.into_boxed_str()),
-                title,
-                id,
-            })
-        }
-        _ => e,
-    });
-
-    // println!("Path: {:?}", f.path);
-    let mut in_footnote = false;
-    let mut events = vec![];
-    let mut footnote_events = vec![];
-
-    // Move footnotes to the end of the post.
-    parser.for_each(|e| {
-        if let Event::Start(Tag::FootnoteDefinition(_)) = e {
-            in_footnote = true;
-        }
-        let footnote_done = if let Event::End(TagEnd::FootnoteDefinition) = e {
-            true
-        } else {
-            false
-        };
-        if in_footnote {
-            footnote_events.push(e);
-        } else {
-            events.push(e);
-        }
-        if footnote_done {
-            in_footnote = false;
-        }
-    });
-
-    if !footnote_events.is_empty() {
-        events.push(Event::Rule);
-        events.extend(footnote_events);
-    }
-
-    let mut content = String::new();
-    pulldown_cmark::html::push_html(&mut content, events.into_iter());
-
     let output_path = if f.status == ContentStatus::Draft {
         output_path.join("draft")
     } else {
@@ -246,47 +261,10 @@ fn render_content(
 
     std::fs::create_dir_all(dst.parent().unwrap())?;
 
-    // TODO(swj): use real jinja templates
-    let html_output = format!(
-        "<!DOCTYPE html>
-<html lang='us'>
-
-<head>
-  <meta charset='UTF-8'>
-  <title>{title}</title>
-  <style type='text/css'>
-  {pygments_css}
-  {style_css}
-  </style>
-
-  <link rel='preload' href='/css/katex.min.css'  as='style' onload=\"this.onload=null;this.rel='stylesheet'\">
-  <script defer src='/js/katex.min.js'></script>
-    <script>
-    const katexOptions = {{
-      delimiters: [
-          {{left: '$$', right: '$$', display: true}},
-          {{left: '$', right: '$', display: false}},
-      ],
-      throwOnError : false
-    }};
-    document.addEventListener('DOMContentLoaded', function() {{
-        for (const e of document.getElementsByClassName('math')) katex.render(e.textContent, e);
-    }});
-    // document.addEventListener('DOMContentLoaded', function() {{
-    //     katex.render(document.body, katexOptions);
-    // }});
-</script>
-
-</head>
-<body>
-
-  <main>
-  {content}
-  </main>
-</body>
-</html>
-"
-    );
+    let tmpl = jinja.get_template("article.html")?;
+    let html_output = tmpl.render(minijinja::context! {
+    article => f.to_article(None)?,
+    ..base_context.clone()})?;
 
     std::fs::write(dst, &html_output)?;
 
@@ -295,6 +273,7 @@ fn render_content(
 
 fn read_templates(template_path: &Path) -> Result<minijinja::Environment> {
     let mut env = minijinja::Environment::new();
+    env.set_auto_escape_callback(|_| minijinja::AutoEscape::None);
 
     for path in glob::glob(template_path.join("**/*").to_str().unwrap())? {
         let path = path?;
@@ -313,11 +292,14 @@ struct ArticlesPage {
     object_list: Vec<Article>,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Clone)]
 struct Article {
     title: String,
     url: String,
+    content: String,
     summary: String,
+    tags: Vec<String>,
+    locale_date: String,
 }
 
 fn main() -> Result<()> {
@@ -375,36 +357,47 @@ fn main() -> Result<()> {
         println!("{:} {:}s", entries.len(), layout);
     }
 
-    let articles = by_layout
+    let recent_articles = by_layout
         .get("post")
         .unwrap()
         .iter()
         .rev()
-        .take(10)
-        .map(|p| Article {
-            title: p.metadata.get("title").unwrap().clone(),
-            url: p.path.to_str().unwrap().to_owned(),
-            summary: "todo".to_string(),
-        })
-        .collect();
+        .map(|p| p.to_article(None))
+        .collect::<Result<Vec<Article>>>()?;
+
+    let mut pages = by_layout
+    .get("page")
+    .unwrap().iter()
+    .map(|p| p.to_article(None))
+    .collect::<Result<Vec<Article>>>()?;
+pages.sort_by(|a, b| a.title.cmp(&b.title));
 
     let base_context = minijinja::context! {
         AUTHOR => "Julian Schrittwieser",
         SITENAME => "furidamu",
         SITEURL => "",
         USER_LOGO_URL => "/images/me_2018_11_01.webp",
+        MENUITEMS => vec![("blog", "/")],
+        DISPLAY_PAGES_ON_MENU => true,
+        pages => pages,
     };
 
     let tmpl = jinja.get_template("index.html")?;
     let index = tmpl.render(minijinja::context! {
-    articles_page =>  ArticlesPage{object_list: articles},
-    ..base_context})?;
+    articles_page =>  ArticlesPage{object_list: recent_articles.iter().take(10).cloned().collect()},
+    ..base_context.clone()})?;
     std::fs::write(render_path.join("index.html"), index)?;
+
+    let tmpl = jinja.get_template("archives.html")?;
+    let archives = tmpl.render(minijinja::context! {
+    dates => recent_articles,
+    ..base_context.clone()})?;
+    std::fs::write(render_path.join("archives.html"), archives)?;
 
     // Run once to render and save.
     for f in files.iter() {
         match f {
-            RawFile::Content(c) => render_content(&c, render_path, &jinja, false)?,
+            RawFile::Content(c) => render_content(&c, render_path, &jinja, &base_context)?,
             RawFile::Static(i) => {
                 let dst = render_path.join(&i.path);
                 std::fs::create_dir_all(dst.parent().unwrap())?;
@@ -416,7 +409,7 @@ fn main() -> Result<()> {
     // Run again to verify internal links.
     for f in files.iter() {
         if let RawFile::Content(c) = f {
-            render_content(&c, render_path, &jinja, true)?;
+            c.to_article(Some(render_path))?;
         }
     }
 
