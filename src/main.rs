@@ -407,7 +407,6 @@ async fn main() -> Result<()> {
     ..base_context.clone()})?;
     std::fs::write(render_path.join("tags.html"), tags)?;
 
-    std::fs::create_dir_all(render_path.join("tags"))?;
     for (tag, mut posts) in by_tag {
         posts.sort_by(|a, b| (&a.path, a.timestamp).cmp(&(&b.path, b.timestamp)));
         let articles = posts
@@ -421,7 +420,9 @@ async fn main() -> Result<()> {
         tag => tag,
         articles_page => ArticlesPage{object_list: articles},
         ..base_context.clone()})?;
-        std::fs::write(render_path.join("tags").join(format!("{tag:}.html")), tags)?;
+        let dst = render_path.join("tags").join(format!("{tag:}/index.html"));
+        std::fs::create_dir_all(dst.parent().unwrap())?;
+        std::fs::write(dst, tags)?;
     }
 
     render::feeds(&config, &recent_articles, &render_path)?;
