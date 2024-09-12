@@ -1,4 +1,5 @@
 use anyhow::{anyhow, bail, Result};
+use clap::Parser;
 use log::{error, info};
 use pulldown_cmark::Event;
 use serde::{Deserialize, Serialize};
@@ -11,11 +12,28 @@ mod markdown;
 mod render;
 mod stats;
 
+#[derive(clap::Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Flags {
+    #[arg(long)]
+    input: String,
+
+    #[arg(long)]
+    output: String,
+
+    /// The site url can be overriden for local development.
+    #[arg(long)]
+    siteurl: Option<String>,
+}
+
 #[derive(Deserialize, Debug)]
 struct Config {
     author: String,
     sitename: String,
     siteurl: String,
+    user_logo_url: String,
+    content_path: String,
+    templates_path: String,
     feed_all_atom: String,
     feed_all_rss: String,
     max_feed_entries: usize,
@@ -310,13 +328,20 @@ async fn main() -> Result<()> {
         })
         .init();
 
-    let blog_path = Path::new("/Users/mononofu/Dropbox/blog/");
-    let content_path = blog_path.join("content");
-    let templates_path = blog_path.join("themes/svbhack/templates");
+    let flags = Flags::try_parse()?;
 
-    let config: Config = toml::from_str(&std::fs::read_to_string(blog_path.join("config.toml"))?)?;
+    let blog_path = Path::new(&flags.input);
 
-    let render_path = Path::new("/Users/mononofu/tmp/blog/");
+    let mut config: Config =
+        toml::from_str(&std::fs::read_to_string(blog_path.join("config.toml"))?)?;
+    if let Some(u) = flags.siteurl {
+        config.siteurl = u;
+    }
+
+    let content_path = blog_path.join(&config.content_path);
+    let templates_path = blog_path.join(&config.templates_path);
+
+    let render_path = Path::new(&flags.output);
 
     let _ = std::fs::remove_dir_all(render_path);
     std::fs::create_dir_all(render_path)?;
@@ -367,7 +392,7 @@ async fn main() -> Result<()> {
         AUTHOR => config.author,
         SITENAME => config.author,
         SITEURL => config.siteurl,
-        USER_LOGO_URL => "/images/me_2018_11_01.webp",
+        USER_LOGO_URL =>  config.user_logo_url,
         MENUITEMS => vec![("blog", "/")],
         DISPLAY_PAGES_ON_MENU => true,
         FEED_ALL_RSS => config.feed_all_rss,
