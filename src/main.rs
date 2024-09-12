@@ -1,12 +1,13 @@
 use anyhow::{anyhow, bail, Result};
 use log::{error, info};
 use pulldown_cmark::{Event, Tag, TagEnd};
-use rss::ItemBuilder;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+
+mod render;
 
 #[derive(Deserialize, Debug)]
 struct Config {
@@ -15,6 +16,7 @@ struct Config {
     siteurl: String,
     feed_all_atom: String,
     feed_all_rss: String,
+    max_feed_entries: usize,
 }
 
 #[derive(PartialEq, Debug)]
@@ -344,40 +346,6 @@ struct Article {
     locale_date: String,
 }
 
-fn render_feeds(cfg: &Config, articles: &Vec<Article>, output_path: &Path) -> Result<()> {
-    let items: Vec<_> = articles
-        .iter()
-        .take(20)
-        .map(|a| {
-            rss::ItemBuilder::default()
-                .title(a.title.clone())
-                .link(
-                    std::path::PathBuf::from(&cfg.siteurl)
-                        .join(&a.url)
-                        .to_str()
-                        .unwrap()
-                        .to_owned(),
-                )
-                .author(cfg.author.clone())
-                .description(a.summary.clone())
-                .pub_date(a.timestamp.and_utc().to_rfc2822())
-                .build()
-        })
-        .collect();
-    let channel = rss::ChannelBuilder::default()
-        .title(cfg.sitename.clone())
-        .link(cfg.siteurl.clone())
-        .last_build_date(chrono::Utc::now().to_rfc2822())
-        .items(items)
-        .build();
-
-    std::fs::create_dir_all(output_path.join(&cfg.feed_all_rss).parent().unwrap())?;
-
-    std::fs::write(output_path.join(&cfg.feed_all_rss), channel.to_string())?;
-
-    Ok(())
-}
-
 fn main() -> Result<()> {
     // Include log level, current time and file:line in each log message.
     env_logger::Builder::from_default_env()
@@ -459,6 +427,7 @@ fn main() -> Result<()> {
         MENUITEMS => vec![("blog", "/")],
         DISPLAY_PAGES_ON_MENU => true,
         FEED_ALL_RSS => config.feed_all_rss,
+        FEED_ALL_ATOM => config.feed_all_atom,
         pages => pages,
     };
 
@@ -511,7 +480,7 @@ fn main() -> Result<()> {
         std::fs::write(render_path.join("tags").join(format!("{tag:}.html")), tags)?;
     }
 
-    render_feeds(&config, &recent_articles, &render_path)?;
+    render::feeds(&config, &recent_articles, &render_path)?;
 
     // Run once to render and save.
     for f in files.iter() {
