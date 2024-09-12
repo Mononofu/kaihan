@@ -296,7 +296,13 @@ fn render_content(
 
     std::fs::create_dir_all(dst.parent().unwrap())?;
 
-    let tmpl = jinja.get_template("article.html")?;
+    let tmpl = jinja.get_template(&format!(
+        "{:}.html",
+        f.metadata
+            .get("layout")
+            .map(|p| p.as_str())
+            .unwrap_or("page")
+    ))?;
     let html_output = tmpl.render(minijinja::context! {
     article => f.to_article()?,
     ..base_context.clone()})?;
