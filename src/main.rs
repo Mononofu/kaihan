@@ -1,11 +1,21 @@
 use anyhow::{anyhow, bail, Result};
 use log::{error, info};
 use pulldown_cmark::{Event, Tag, TagEnd};
-use serde::Serialize;
+use rss::ItemBuilder;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+
+#[derive(Deserialize, Debug)]
+struct Config {
+    author: String,
+    sitename: String,
+    siteurl: String,
+    feed_all_atom: String,
+    feed_all_rss: String,
+}
 
 #[derive(PartialEq, Debug)]
 enum ContentStatus {
@@ -265,6 +275,7 @@ impl RawContent {
             summary: to_html(&summary_markdown)?,
             content: to_html(&self.markdown)?,
             tags: self.tags.clone(),
+            timestamp: self.timestamp,
             locale_date: self.timestamp.format("%a %d %B %Y").to_string(),
         })
     }
@@ -323,7 +334,42 @@ struct Article {
     content: String,
     summary: String,
     tags: Vec<String>,
+    timestamp: chrono::NaiveDateTime,
     locale_date: String,
+}
+
+fn render_feeds(cfg: &Config, articles: &Vec<Article>, output_path: &Path) -> Result<()> {
+    let items: Vec<_> = articles
+        .iter()
+        .take(20)
+        .map(|a| {
+            rss::ItemBuilder::default()
+                .title(a.title.clone())
+                .link(
+                    std::path::PathBuf::from(&cfg.siteurl)
+                        .join(&a.url)
+                        .to_str()
+                        .unwrap()
+                        .to_owned(),
+                )
+                .author(cfg.author.clone())
+                .description(a.summary.clone())
+                .pub_date(a.timestamp.and_utc().to_rfc2822())
+                .build()
+        })
+        .collect();
+    let channel = rss::ChannelBuilder::default()
+        .title(cfg.sitename.clone())
+        .link(cfg.siteurl.clone())
+        .last_build_date(chrono::Utc::now().to_rfc2822())
+        .items(items)
+        .build();
+
+    std::fs::create_dir_all(output_path.join(&cfg.feed_all_rss).parent().unwrap())?;
+
+    std::fs::write(output_path.join(&cfg.feed_all_rss), channel.to_string())?;
+
+    Ok(())
 }
 
 fn main() -> Result<()> {
@@ -349,6 +395,8 @@ fn main() -> Result<()> {
     let blog_path = Path::new("/Users/mononofu/Dropbox/blog/");
     let content_path = blog_path.join("content");
     let templates_path = blog_path.join("themes/svbhack/templates");
+
+    let config: Config = toml::from_str(&std::fs::read_to_string(blog_path.join("config.toml"))?)?;
 
     let render_path = Path::new("/Users/mononofu/tmp/blog/");
 
@@ -398,12 +446,13 @@ fn main() -> Result<()> {
     pages.sort_by(|a, b| a.title.cmp(&b.title));
 
     let base_context = minijinja::context! {
-        AUTHOR => "Julian Schrittwieser",
-        SITENAME => "furidamu",
-        SITEURL => "",
+        AUTHOR => config.author,
+        SITENAME => config.author,
+        SITEURL => config.siteurl,
         USER_LOGO_URL => "/images/me_2018_11_01.webp",
         MENUITEMS => vec![("blog", "/")],
         DISPLAY_PAGES_ON_MENU => true,
+        FEED_ALL_RSS => config.feed_all_rss,
         pages => pages,
     };
 
@@ -455,6 +504,8 @@ fn main() -> Result<()> {
         ..base_context.clone()})?;
         std::fs::write(render_path.join("tags").join(format!("{tag:}.html")), tags)?;
     }
+
+    render_feeds(&config, &recent_articles, &render_path)?;
 
     // Run once to render and save.
     for f in files.iter() {
