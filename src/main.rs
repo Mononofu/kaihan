@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 
 mod markdown;
 mod render;
+mod stats;
 
 #[derive(Deserialize, Debug)]
 struct Config {
@@ -18,6 +19,8 @@ struct Config {
     feed_all_atom: String,
     feed_all_rss: String,
     max_feed_entries: usize,
+    github_user: String,
+    github_access_token: String,
 }
 
 #[derive(PartialEq, Debug)]
@@ -286,7 +289,8 @@ struct Article {
     locale_date: String,
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     // Include log level, current time and file:line in each log message.
     env_logger::Builder::from_default_env()
         .format(|buf, record| {
@@ -433,6 +437,12 @@ fn main() -> Result<()> {
             }
         }
     }
+
+    // TODO(swj): How to best ignore dependencies checked into repos?
+    // std::fs::write(
+    //     render_path.join("js/language_usage.js"),
+    //     stats::github_languages(&config).await?,
+    // )?;
 
     // Run again to verify internal links.
     for f in files.iter() {
