@@ -16,6 +16,6 @@ To publish, run:
 
 ```sh
 RUST_LOG=info RUST_BACKTRACE=1 cargo run -- \
-  --input ~/blog/ --output ~/tmp/rendered_blog/ \
+  --input ~/blog/ --output ~/tmp/rendered_blog/
 ./s3_upload.sh ~/tmp/rendered_blog/ www.furidamu.org
 ```

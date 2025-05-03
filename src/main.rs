@@ -367,7 +367,7 @@ async fn main() -> Result<()> {
     }
     by_layout
         .values_mut()
-        .for_each(|v| v.sort_by(|a, b| (&a.path, a.timestamp).cmp(&(&b.path, b.timestamp))));
+        .for_each(|v| v.sort_by(|a, b| (a.timestamp, &a.path).cmp(&(b.timestamp, &b.path))));
     for (layout, entries) in by_layout.iter() {
         println!("{:} {:}s", entries.len(), layout);
     }
