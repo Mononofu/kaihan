@@ -235,12 +235,15 @@ impl RawContent {
             .get("title")
             .ok_or(anyhow!("Must have title!"))?;
 
+        let footnote_re = regex::Regex::new(r"\[\^\w+\]").unwrap();
+
         let mut summary_markdown = self
             .markdown
             .split_inclusive([' ', '\n'])
             .take(100)
             .collect::<Vec<_>>()
             .join("");
+        summary_markdown = footnote_re.replace_all(&summary_markdown, "").to_string();
         summary_markdown.push_str("...");
 
         Ok(Article {
