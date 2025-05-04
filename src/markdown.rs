@@ -8,6 +8,7 @@ pub fn to_events(markdown: &str) -> Result<Vec<Event>> {
     options.insert(pulldown_cmark::Options::ENABLE_TABLES);
     options.insert(pulldown_cmark::Options::ENABLE_MATH);
     options.insert(pulldown_cmark::Options::ENABLE_FOOTNOTES);
+    options.insert(pulldown_cmark::Options::ENABLE_STRIKETHROUGH);
 
     let parser = pulldown_cmark::Parser::new_ext(&markdown, options);
 
