@@ -191,27 +191,38 @@ fn to_html(markdown: &str) -> Result<String> {
     Ok(content)
 }
 
+fn validate_link(url: &str, path: &PathBuf, output_path: &Path) -> Result<()> {
+    // Verify that internal links are valid.
+    if url.starts_with("/") {
+        let url = url.trim_matches('/');
+        // Strip # anchor links.
+        let url = url.split_once('#').map(|(a, _)| a).unwrap_or(url);
+
+        let target_file = output_path.join(&url);
+        if !target_file.exists() {
+            error!(
+                "Dangling internal URL in {:?}: {:}, expected {:?}",
+                path, url, target_file
+            );
+        }
+    } else if !url.starts_with("http") && !url.starts_with("mailto") {
+        error!("Interal URLs should be absolute {:?}, external URLs should start with https://, got: {:}", path, url);
+    }
+    Ok(())
+}
+
 impl RawContent {
     fn validate_links(&self, output_path: &Path) -> Result<()> {
         let events = markdown::to_events(&self.markdown)?;
         for e in events {
-            if let Event::Start(pulldown_cmark::Tag::Link { dest_url: url, .. }) = e {
-                // Verify that internal links are valid.
-                if url.starts_with("/") {
-                    let url = url.trim_matches('/');
-                    // Strip # anchor links.
-                    let url = url.split_once('#').map(|(a, _)| a).unwrap_or(url);
-
-                    let target_file = output_path.join(&url);
-                    if !target_file.exists() {
-                        error!(
-                            "Dangling internal URL in {:?}: {:}, expected {:?}",
-                            self.path, url, target_file
-                        );
-                    }
-                } else if !url.starts_with("http") && !url.starts_with("mailto") {
-                    error!("Interal URLs should be absolute {:?}, external URLs should start with https://, got: {:}", self.path, url);
+            match e {
+                Event::Start(pulldown_cmark::Tag::Link { dest_url: url, .. }) => {
+                    validate_link(&url, &self.path, output_path)?
                 }
+                Event::Start(pulldown_cmark::Tag::Image { dest_url: url, .. }) => {
+                    validate_link(&url, &self.path, output_path)?
+                }
+                _ => {}
             }
         }
 
