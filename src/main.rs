@@ -168,7 +168,7 @@ fn read_source_files(current: &Path, prefix: &Path) -> Result<Vec<RawFile>> {
                         tags,
                     }))
                 }
-                "py" => {}
+                "py" if !path.to_str().unwrap().contains("/downloads/") => {}
                 _ => files.push(RawFile::Static(StaticContent {
                     path: if prefix.to_string_lossy() == "extra" {
                         // Extra files should go directly into the page root.
