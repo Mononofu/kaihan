@@ -7,7 +7,7 @@ For local testing, run:
 ```sh
 python3 -m http.server 8787 --bind 127.0.0.1 --directory ~/tmp/rendered_blog/
 
-RUST_LOG=info RUST_BACKTRACE=1 cargo run -- \
+RUST_LOG=info RUST_BACKTRACE=1 cargo run --release -- \
   --input ~/blog/ --output ~/tmp/rendered_blog/ \
   --siteurl http://localhost:8787
 ```
@@ -15,7 +15,7 @@ RUST_LOG=info RUST_BACKTRACE=1 cargo run -- \
 To publish, run:
 
 ```sh
-RUST_LOG=info RUST_BACKTRACE=1 cargo run -- \
+RUST_LOG=info RUST_BACKTRACE=1 cargo run --release -- \
   --input ~/blog/ --output ~/tmp/rendered_blog/
 ./s3_upload.sh ~/tmp/rendered_blog/ www.furidamu.org
 ```

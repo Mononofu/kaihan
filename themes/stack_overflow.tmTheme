@@ -1,0 +1,230 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>author</key>
+	<string>Generated from Stack Overflow Light Theme</string>
+	<key>name</key>
+	<string>Stack Overflow Light</string>
+	<key>settings</key>
+	<array>
+		<dict>
+			<key>settings</key>
+			<dict>
+				<key>background</key>
+				<string>#F6F6F6</string>
+				<key>foreground</key>
+				<string>#2F3337</string>
+				<key>caret</key>
+				<string>#2F3337</string>
+				<key>selection</key>
+				<string>#E0E0E0</string>
+				<key>selectionForeground</key>
+				<string>#2F3337</string>
+				<key>lineHighlight</key>
+				<string>#EEEEEE</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>name</key>
+			<string>Comment</string>
+			<key>scope</key>
+			<string>comment</string>
+			<key>settings</key>
+			<dict>
+				<key>foreground</key>
+				<string>#54790D</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>name</key>
+			<string>Keyword</string>
+			<key>scope</key>
+			<string>keyword, storage.type, keyword.control</string>
+			<key>settings</key>
+			<dict>
+				<key>foreground</key>
+				<string>#015692</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>name</key>
+			<string>Operator</string>
+			<key>scope</key>
+			<string>keyword.operator</string>
+			<key>settings</key>
+			<dict>
+				<key>foreground</key>
+				<string>#2F3337</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>name</key>
+			<string>Attribute</string>
+			<key>scope</key>
+			<string>entity.other.attribute-name</string>
+			<key>settings</key>
+			<dict>
+				<key>foreground</key>
+				<string>#015692</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>name</key>
+			<string>HTML/XML Attribute</string>
+			<key>scope</key>
+			<string>entity.other.attribute-name.html, entity.other.attribute-name.xml</string>
+			<key>settings</key>
+			<dict>
+				<key>foreground</key>
+				<string>#803378</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>name</key>
+			<string>Number, Type, ID, Quote</string>
+			<key>scope</key>
+			<string>constant.numeric, entity.name.type, entity.other.inherited-class, meta.selector</string>
+			<key>settings</key>
+			<dict>
+				<key>foreground</key>
+				<string>#B75501</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>name</key>
+			<string>CSS Selector Class</string>
+			<key>scope</key>
+			<string>entity.other.attribute-name.class</string>
+			<key>settings</key>
+			<dict>
+				<key>foreground</key>
+				<string>#015692</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>name</key>
+			<string>String, Link</string>
+			<key>scope</key>
+			<string>string, constant.other.symbol, entity.name.tag, markup.underline.link</string>
+			<key>settings</key>
+			<dict>
+				<key>foreground</key>
+				<string>#54790D</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>name</key>
+			<string>Variable, Function Arguments</string>
+			<key>scope</key>
+			<string>variable, variable.parameter</string>
+			<key>settings</key>
+			<dict>
+				<key>foreground</key>
+				<string>#2F3337</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>name</key>
+			<string>Regular Expression</string>
+			<key>scope</key>
+			<string>string.regexp</string>
+			<key>settings</key>
+			<dict>
+				<key>foreground</key>
+				<string>#54790D</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>name</key>
+			<string>Meta, Pseudo Selector</string>
+			<key>scope</key>
+			<string>meta.tag, entity.other.attribute-name.pseudo-class</string>
+			<key>settings</key>
+			<dict>
+				<key>foreground</key>
+				<string>#015692</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>name</key>
+			<string>Built-in, Title, Literal</string>
+			<key>scope</key>
+			<string>support.function, entity.name.function, constant.language</string>
+			<key>settings</key>
+			<dict>
+				<key>foreground</key>
+				<string>#B75501</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>name</key>
+			<string>Bullet, Code</string>
+			<key>scope</key>
+			<string>markup.list.unnumbered.markdown, markup.raw</string>
+			<key>settings</key>
+			<dict>
+				<key>foreground</key>
+				<string>#535A60</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>name</key>
+			<string>Meta String</string>
+			<key>scope</key>
+			<string>meta.tag string</string>
+			<key>settings</key>
+			<dict>
+				<key>foreground</key>
+				<string>#54790D</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>name</key>
+			<string>Deletion</string>
+			<key>scope</key>
+			<string>markup.deleted</string>
+			<key>settings</key>
+			<dict>
+				<key>foreground</key>
+				<string>#C02D2E</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>name</key>
+			<string>Addition</string>
+			<key>scope</key>
+			<string>markup.inserted</string>
+			<key>settings</key>
+			<dict>
+				<key>foreground</key>
+				<string>#2F6F44</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>name</key>
+			<string>Emphasis</string>
+			<key>scope</key>
+			<string>markup.italic</string>
+			<key>settings</key>
+			<dict>
+				<key>fontStyle</key>
+				<string>italic</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>name</key>
+			<string>Strong</string>
+			<key>scope</key>
+			<string>markup.bold</string>
+			<key>settings</key>
+			<dict>
+				<key>fontStyle</key>
+				<string>bold</string>
+			</dict>
+		</dict>
+	</array>
+	<key>uuid</key>
+	<string>D8996D22-B2B5-4C7F-8F3A-F6A7B3F8E9D0</string>
+</dict>
+</plist>
