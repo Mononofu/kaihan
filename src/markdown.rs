@@ -254,3 +254,34 @@ impl Highlighter {
         Ok(new_events)
     }
 }
+
+pub fn render_math(events: Vec<Event>) -> Result<Vec<Event>> {
+    use pulldown_latex::{config::DisplayMode, Parser, RenderConfig, Storage};
+
+    let mut storage = Storage::new();
+
+    let mut latex_as_html = |latex_math: &str, display_mode| {
+        storage.reset();
+        let parser = Parser::new(latex_math, &storage);
+        let config = RenderConfig {
+            display_mode,
+            ..Default::default()
+        };
+        let mut mathml = String::new();
+        pulldown_latex::push_mathml(&mut mathml, parser, config)?;
+        Ok::<String, anyhow::Error>(mathml)
+    };
+
+    events
+        .into_iter()
+        .map(|e| match e {
+            Event::InlineMath(m) => Ok(Event::InlineHtml(
+                latex_as_html(&m, DisplayMode::Inline)?.into(),
+            )),
+            Event::DisplayMath(m) => Ok(Event::InlineHtml(
+                latex_as_html(&m, DisplayMode::Block)?.into(),
+            )),
+            e => Ok(e),
+        })
+        .collect::<Result<_>>()
+}

@@ -187,6 +187,7 @@ fn read_source_files(current: &Path, prefix: &Path) -> Result<Vec<RawFile>> {
 fn to_html(markdown: &str, highlighter: &markdown::Highlighter) -> Result<String> {
     let events = markdown::to_events(markdown)?;
     let events = highlighter.highlight_code(events)?;
+    let events = markdown::render_math(events)?;
     let mut content = String::new();
     pulldown_cmark::html::push_html(&mut content, events.into_iter());
     Ok(content)
