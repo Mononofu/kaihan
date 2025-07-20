@@ -184,8 +184,9 @@ fn read_source_files(current: &Path, prefix: &Path) -> Result<Vec<RawFile>> {
     Ok(files)
 }
 
-fn to_html(markdown: &str) -> Result<String> {
+fn to_html(markdown: &str, highlighter: &markdown::Highlighter) -> Result<String> {
     let events = markdown::to_events(markdown)?;
+    let events = highlighter.highlight_code(events)?;
     let mut content = String::new();
     pulldown_cmark::html::push_html(&mut content, events.into_iter());
     Ok(content)
@@ -229,7 +230,7 @@ impl RawContent {
         Ok(())
     }
 
-    fn to_article(&self) -> Result<Article> {
+    fn to_article(&self, highlighter: &markdown::Highlighter) -> Result<Article> {
         let title = self
             .metadata
             .get("title")
@@ -249,8 +250,8 @@ impl RawContent {
         Ok(Article {
             title: title.clone(),
             url: self.path.to_str().unwrap().to_owned(),
-            summary: to_html(&summary_markdown)?,
-            content: to_html(&self.markdown)?,
+            summary: to_html(&summary_markdown, highlighter)?,
+            content: to_html(&self.markdown, highlighter)?,
             tags: self.tags.clone(),
             timestamp: self.timestamp,
             locale_date: self.timestamp.format("%a %d %B %Y").to_string(),
@@ -263,6 +264,7 @@ fn render_content(
     output_path: &Path,
     jinja: &minijinja::Environment,
     base_context: &minijinja::Value,
+    highlighter: &markdown::Highlighter,
 ) -> Result<()> {
     let output_path = if f.status == ContentStatus::Draft {
         output_path.join("draft")
@@ -281,7 +283,7 @@ fn render_content(
             .unwrap_or("page")
     ))?;
     let html_output = tmpl.render(minijinja::context! {
-    article => f.to_article()?,
+    article => f.to_article(highlighter)?,
     ..base_context.clone()})?;
 
     std::fs::write(dst, &html_output)?;
@@ -352,6 +354,8 @@ async fn main() -> Result<()> {
         config.siteurl = u;
     }
 
+    let highlighter = markdown::Highlighter::new()?;
+
     let content_path = blog_path.join(&config.content_path);
     let templates_path = blog_path.join(&config.templates_path);
 
@@ -391,14 +395,14 @@ async fn main() -> Result<()> {
         .unwrap()
         .iter()
         .rev()
-        .map(|p| p.to_article())
+        .map(|p| p.to_article(&highlighter))
         .collect::<Result<Vec<Article>>>()?;
 
     let mut pages = by_layout
         .get("page")
         .unwrap()
         .iter()
-        .map(|p| p.to_article())
+        .map(|p| p.to_article(&highlighter))
         .collect::<Result<Vec<Article>>>()?;
     pages.sort_by(|a, b| a.title.cmp(&b.title));
 
@@ -452,7 +456,7 @@ async fn main() -> Result<()> {
             .iter()
             .rev()
             .take(10)
-            .map(|p| p.to_article())
+            .map(|p| p.to_article(&highlighter))
             .collect::<Result<_>>()?;
         let tmpl = jinja.get_template("tag.html")?;
         let tags = tmpl.render(minijinja::context! {
@@ -469,7 +473,9 @@ async fn main() -> Result<()> {
     // Run once to render and save.
     for f in files.iter() {
         match f {
-            RawFile::Content(c) => render_content(&c, render_path, &jinja, &base_context)?,
+            RawFile::Content(c) => {
+                render_content(&c, render_path, &jinja, &base_context, &highlighter)?
+            }
             RawFile::Static(i) => {
                 let dst = render_path.join(&i.path);
                 std::fs::create_dir_all(dst.parent().unwrap())?;

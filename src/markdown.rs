@@ -1,6 +1,6 @@
 use anyhow::{ensure, Result};
 use pulldown_cmark::{CodeBlockKind, CowStr, Event, Tag, TagEnd};
-use syntect::highlighting::{Style, ThemeSet};
+use syntect::highlighting::{Theme, ThemeSet};
 use syntect::html::highlighted_html_for_string;
 use syntect::parsing::SyntaxSet;
 
@@ -36,7 +36,6 @@ pub fn to_events(markdown: &str) -> Result<Vec<Event>> {
     });
 
     let events = bottom_footnotes(parser.collect());
-    let events = highlight_code(events)?;
     Ok(events)
 }
 
@@ -188,59 +187,70 @@ fn bottom_footnotes(events: Vec<Event>) -> Vec<Event> {
     new_events
 }
 
-fn highlight_code(events: Vec<Event>) -> Result<Vec<Event>> {
-    let syntax_set = SyntaxSet::load_defaults_newlines();
-    let theme = ThemeSet::get_theme("themes/stack_overflow.tmTheme")?;
-    // let theme = &theme_set.themes["InspiredGitHub"];
+pub struct Highlighter {
+    syntax_set: SyntaxSet,
+    theme: Theme,
+}
 
-    let mut new_events = Vec::with_capacity(events.len());
-
-    let mut active_code_block = None;
-    let mut code = String::new();
-
-    for event in events.into_iter() {
-        match event {
-            Event::Code(inline_code) => {
-                // let syntax = syntax_set.find_syntax_plain_text();
-                // let html = highlighted_html_for_string(&inline_code, &syntax_set, syntax, theme)?;
-                new_events.push(Event::InlineHtml(
-                    format!("<code class=\"inline-code\">{inline_code}</code>").into(),
-                ));
-            }
-            Event::Start(Tag::CodeBlock(b)) => {
-                active_code_block = Some(b);
-            }
-            Event::End(TagEnd::CodeBlock) => {
-                let block_kind = active_code_block.take().expect("unpaired events!");
-                let syntax = match &block_kind {
-                    CodeBlockKind::Fenced(l) if !l.is_empty() => {
-                        let mut lang = l.to_string();
-                        if lang == "scheme" {
-                            lang = "lisp".to_string();
-                        }
-                        let syntax = syntax_set.find_syntax_by_token(&lang);
-                        syntax.unwrap_or_else(|| {
-                            log::warn!("Unknown syntax {l:?}");
-                            syntax_set.find_syntax_plain_text()
-                        })
-                    }
-                    _ => syntax_set.find_syntax_plain_text(),
-                };
-                let html = highlighted_html_for_string(&code, &syntax_set, syntax, &theme)?;
-                code.clear();
-                new_events.push(Event::Html(
-                    format!("<div class='code'>{}</div>", html).into(),
-                ));
-            }
-            Event::Text(s) if active_code_block.is_some() => {
-                code += &s;
-            }
-            ev => {
-                ensure!(active_code_block.is_none());
-                new_events.push(ev)
-            }
-        }
+impl Highlighter {
+    pub fn new() -> Result<Self> {
+        Ok(Highlighter {
+            syntax_set: SyntaxSet::load_defaults_newlines(),
+            theme: ThemeSet::get_theme("themes/stack_overflow.tmTheme")?,
+        })
     }
 
-    Ok(new_events)
+    pub fn highlight_code<'a>(&self, events: Vec<Event<'a>>) -> Result<Vec<Event<'a>>> {
+        let mut new_events = Vec::with_capacity(events.len());
+
+        let mut active_code_block = None;
+        let mut code = String::new();
+
+        for event in events.into_iter() {
+            match event {
+                Event::Code(inline_code) => {
+                    // let syntax = syntax_set.find_syntax_plain_text();
+                    // let html = highlighted_html_for_string(&inline_code, &syntax_set, syntax, theme)?;
+                    new_events.push(Event::InlineHtml(
+                        format!("<code class=\"inline-code\">{inline_code}</code>").into(),
+                    ));
+                }
+                Event::Start(Tag::CodeBlock(b)) => {
+                    active_code_block = Some(b);
+                }
+                Event::End(TagEnd::CodeBlock) => {
+                    let block_kind = active_code_block.take().expect("unpaired events!");
+                    let syntax = match &block_kind {
+                        CodeBlockKind::Fenced(l) if !l.is_empty() => {
+                            let mut lang = l.to_string();
+                            if lang == "scheme" {
+                                lang = "lisp".to_string();
+                            }
+                            let syntax = self.syntax_set.find_syntax_by_token(&lang);
+                            syntax.unwrap_or_else(|| {
+                                log::warn!("Unknown syntax {l:?}");
+                                self.syntax_set.find_syntax_plain_text()
+                            })
+                        }
+                        _ => self.syntax_set.find_syntax_plain_text(),
+                    };
+                    let html =
+                        highlighted_html_for_string(&code, &self.syntax_set, syntax, &self.theme)?;
+                    code.clear();
+                    new_events.push(Event::Html(
+                        format!("<div class='code'>{}</div>", html).into(),
+                    ));
+                }
+                Event::Text(s) if active_code_block.is_some() => {
+                    code += &s;
+                }
+                ev => {
+                    ensure!(active_code_block.is_none());
+                    new_events.push(ev)
+                }
+            }
+        }
+
+        Ok(new_events)
+    }
 }
