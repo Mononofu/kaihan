@@ -1,4 +1,4 @@
-use anyhow::{ensure, Result};
+use eyre::{ensure, Result};
 use pulldown_cmark::{CodeBlockKind, CowStr, Event, Tag, TagEnd};
 use syntect::highlighting::{Theme, ThemeSet};
 use syntect::html::highlighted_html_for_string;
@@ -234,9 +234,12 @@ impl Highlighter {
                         }
                         _ => self.syntax_set.find_syntax_plain_text(),
                     };
-                    let html =
-                        highlighted_html_for_string(&code, &self.syntax_set, syntax, &self.theme)?;
-                    code.clear();
+                    let html = highlighted_html_for_code_block(
+                        &mut code,
+                        &self.syntax_set,
+                        syntax,
+                        &self.theme,
+                    )?;
                     new_events.push(Event::Html(
                         format!("<div class='code'>{}</div>", html).into(),
                     ));
@@ -255,6 +258,31 @@ impl Highlighter {
     }
 }
 
+fn highlighted_html_for_code_block(
+    code: &mut String,
+    ss: &SyntaxSet,
+    syntax: &syntect::parsing::SyntaxReference,
+    theme: &Theme,
+) -> Result<String> {
+    let mut highlighter = syntect::easy::HighlightLines::new(syntax, theme);
+    let (mut output, bg) = syntect::html::start_highlighted_html_snippet(theme);
+
+    for line in syntect::util::LinesWithEndings::from(code) {
+        output.push_str("<span class=\"line\">");
+        let regions = highlighter.highlight_line(line, ss)?;
+        syntect::html::append_highlighted_html_for_styled_line(
+            &regions[..],
+            syntect::html::IncludeBackground::IfDifferent(bg),
+            &mut output,
+        )?;
+        output.push_str("</span>");
+    }
+    output.push_str("</pre>\n");
+
+    code.clear();
+    Ok(output)
+}
+
 pub fn render_math(events: Vec<Event>) -> Result<Vec<Event>> {
     use pulldown_latex::{config::DisplayMode, Parser, RenderConfig, Storage};
 
@@ -269,7 +297,7 @@ pub fn render_math(events: Vec<Event>) -> Result<Vec<Event>> {
         };
         let mut mathml = String::new();
         pulldown_latex::push_mathml(&mut mathml, parser, config)?;
-        Ok::<String, anyhow::Error>(mathml)
+        Ok::<String, eyre::Report>(mathml)
     };
 
     events

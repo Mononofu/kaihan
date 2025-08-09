@@ -1,5 +1,5 @@
 use crate::{Article, Config};
-use anyhow::Result;
+use eyre::Result;
 use std::path::Path;
 
 pub fn feeds(cfg: &Config, articles: &Vec<Article>, output_path: &Path) -> Result<()> {

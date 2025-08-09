@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use anyhow::Result;
+use eyre::Result;
 use futures::StreamExt;
 
 use crate::Config;

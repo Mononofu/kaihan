@@ -1,5 +1,5 @@
-use anyhow::{anyhow, bail, Result};
 use clap::Parser;
+use eyre::{anyhow, bail, Result};
 use log::{error, info};
 use pulldown_cmark::Event;
 use serde::{Deserialize, Serialize};
@@ -39,6 +39,7 @@ struct Config {
     max_feed_entries: usize,
     github_user: String,
     github_access_token: String,
+    summary_words: i32,
 }
 
 #[derive(PartialEq, Debug)]
@@ -49,7 +50,7 @@ enum ContentStatus {
 }
 
 impl TryFrom<&str> for ContentStatus {
-    type Error = anyhow::Error;
+    type Error = eyre::Report;
 
     fn try_from(s: &str) -> Result<ContentStatus> {
         match s.to_ascii_lowercase().as_str() {
@@ -231,7 +232,11 @@ impl RawContent {
         Ok(())
     }
 
-    fn to_article(&self, highlighter: &markdown::Highlighter) -> Result<Article> {
+    fn to_article(
+        &self,
+        summary_words: i32,
+        highlighter: &markdown::Highlighter,
+    ) -> Result<Article> {
         let title = self
             .metadata
             .get("title")
@@ -239,14 +244,21 @@ impl RawContent {
 
         let footnote_re = regex::Regex::new(r"\[\^\w+\]").unwrap();
 
-        let mut summary_markdown = self
+        let words = self
             .markdown
             .split_inclusive([' ', '\n'])
-            .take(100)
+            .collect::<Vec<_>>();
+        let n_words = words.len();
+
+        let mut summary_markdown = words
+            .into_iter()
+            .take(summary_words as usize)
             .collect::<Vec<_>>()
             .join("");
         summary_markdown = footnote_re.replace_all(&summary_markdown, "").to_string();
-        summary_markdown.push_str("...");
+        if n_words > summary_words as usize {
+            summary_markdown.push_str("<span class=\"more\">...</span>");
+        }
 
         Ok(Article {
             title: title.clone(),
@@ -265,6 +277,7 @@ fn render_content(
     output_path: &Path,
     jinja: &minijinja::Environment,
     base_context: &minijinja::Value,
+    summary_words: i32,
     highlighter: &markdown::Highlighter,
 ) -> Result<()> {
     let output_path = if f.status == ContentStatus::Draft {
@@ -284,7 +297,7 @@ fn render_content(
             .unwrap_or("page")
     ))?;
     let html_output = tmpl.render(minijinja::context! {
-    article => f.to_article(highlighter)?,
+    article => f.to_article(summary_words, highlighter)?,
     ..base_context.clone()})?;
 
     std::fs::write(dst, &html_output)?;
@@ -396,14 +409,14 @@ async fn main() -> Result<()> {
         .unwrap()
         .iter()
         .rev()
-        .map(|p| p.to_article(&highlighter))
+        .map(|p| p.to_article(config.summary_words, &highlighter))
         .collect::<Result<Vec<Article>>>()?;
 
     let mut pages = by_layout
         .get("page")
         .unwrap()
         .iter()
-        .map(|p| p.to_article(&highlighter))
+        .map(|p| p.to_article(config.summary_words, &highlighter))
         .collect::<Result<Vec<Article>>>()?;
     pages.sort_by(|a, b| a.title.cmp(&b.title));
 
@@ -412,7 +425,8 @@ async fn main() -> Result<()> {
         SITENAME => config.author,
         SITEURL => config.siteurl,
         USER_LOGO_URL =>  config.user_logo_url,
-        MENUITEMS => vec![("blog", "/")],
+        MENUITEMS => vec![("blog", "https://www.julian.ac/"),
+                          ("photos", "https://www.julian.photo/")],
         DISPLAY_PAGES_ON_MENU => true,
         FEED_ALL_RSS => config.feed_all_rss,
         FEED_ALL_ATOM => config.feed_all_atom,
@@ -457,7 +471,7 @@ async fn main() -> Result<()> {
             .iter()
             .rev()
             .take(10)
-            .map(|p| p.to_article(&highlighter))
+            .map(|p| p.to_article(config.summary_words, &highlighter))
             .collect::<Result<_>>()?;
         let tmpl = jinja.get_template("tag.html")?;
         let tags = tmpl.render(minijinja::context! {
@@ -474,9 +488,14 @@ async fn main() -> Result<()> {
     // Run once to render and save.
     for f in files.iter() {
         match f {
-            RawFile::Content(c) => {
-                render_content(&c, render_path, &jinja, &base_context, &highlighter)?
-            }
+            RawFile::Content(c) => render_content(
+                &c,
+                render_path,
+                &jinja,
+                &base_context,
+                config.summary_words,
+                &highlighter,
+            )?,
             RawFile::Static(i) => {
                 let dst = render_path.join(&i.path);
                 std::fs::create_dir_all(dst.parent().unwrap())?;
