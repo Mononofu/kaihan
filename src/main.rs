@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
+use std::os::macos::raw;
 use std::path::{Path, PathBuf};
 
 mod markdown;
@@ -244,31 +245,44 @@ impl RawContent {
 
         let footnote_re = regex::Regex::new(r"\[\^\w+\]").unwrap();
 
-        let words = self
-            .markdown
-            .split_inclusive([' ', '\n'])
-            .collect::<Vec<_>>();
-        let n_words = words.len();
+        let summary_markdown = if self.markdown.contains("<!-- summary end -->") {
+            self.markdown
+                .split("<!-- summary end -->")
+                .next()
+                .ok_or(anyhow!("No summary end marker found!"))?
+                .to_string()
+        } else {
+            let words = self
+                .markdown
+                .split_inclusive([' ', '\n'])
+                .collect::<Vec<_>>();
+            let n_words = words.len();
 
-        let mut summary_markdown = words
-            .into_iter()
-            .take(summary_words as usize)
-            .collect::<Vec<_>>()
-            .join("");
-        summary_markdown = footnote_re.replace_all(&summary_markdown, "").to_string();
-        if n_words > summary_words as usize {
-            summary_markdown.push_str("<span class=\"more\">...</span>");
-        }
+            let mut summary_markdown = words
+                .into_iter()
+                .take(summary_words as usize)
+                .collect::<Vec<_>>()
+                .join("");
+            summary_markdown = footnote_re.replace_all(&summary_markdown, "").to_string();
+            if n_words > summary_words as usize {
+                summary_markdown.push_str("<span class=\"more\">...</span>");
+            }
+            summary_markdown
+        };
 
         Ok(Article {
             title: title.clone(),
-            url: self.path.to_str().unwrap().to_owned(),
+            url: self.to_url(),
             summary: to_html(&summary_markdown, highlighter)?,
             content: to_html(&self.markdown, highlighter)?,
             tags: self.tags.clone(),
             timestamp: self.timestamp,
             locale_date: self.timestamp.format("%a %d %B %Y").to_string(),
         })
+    }
+
+    fn to_url(&self) -> String {
+        self.path.to_str().unwrap().to_owned()
     }
 }
 
@@ -279,6 +293,8 @@ fn render_content(
     base_context: &minijinja::Value,
     summary_words: i32,
     highlighter: &markdown::Highlighter,
+    prev: Option<&RawContent>,
+    next: Option<&RawContent>,
 ) -> Result<()> {
     let output_path = if f.status == ContentStatus::Draft {
         output_path.join("draft")
@@ -297,8 +313,11 @@ fn render_content(
             .unwrap_or("page")
     ))?;
     let html_output = tmpl.render(minijinja::context! {
-    article => f.to_article(summary_words, highlighter)?,
-    ..base_context.clone()})?;
+        article => f.to_article(summary_words, highlighter)?,
+        prev_url => prev.map(|p| p.to_url()),
+        next_url => next.map(|n| n.to_url()),
+        ..base_context.clone()
+    })?;
 
     std::fs::write(dst, &html_output)?;
 
@@ -486,22 +505,53 @@ async fn main() -> Result<()> {
     render::feeds(&config, &recent_articles, &render_path)?;
 
     // Run once to render and save.
+    let mut raw_posts = Vec::new();
     for f in files.iter() {
         match f {
-            RawFile::Content(c) => render_content(
-                &c,
-                render_path,
-                &jinja,
-                &base_context,
-                config.summary_words,
-                &highlighter,
-            )?,
+            RawFile::Content(c) => {
+                if c.path.starts_with("blog") {
+                    raw_posts.push(c);
+                } else {
+                    render_content(
+                        c,
+                        &render_path,
+                        &jinja,
+                        &base_context,
+                        config.summary_words,
+                        &highlighter,
+                        None,
+                        None,
+                    )?;
+                }
+            }
             RawFile::Static(i) => {
                 let dst = render_path.join(&i.path);
                 std::fs::create_dir_all(dst.parent().unwrap())?;
                 std::fs::write(dst, &i.data)?;
             }
         }
+    }
+
+    raw_posts.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+    for (i, c) in raw_posts.iter().enumerate() {
+        render_content(
+            &c,
+            render_path,
+            &jinja,
+            &base_context,
+            config.summary_words,
+            &highlighter,
+            if i == 0 {
+                None
+            } else {
+                Some(&raw_posts[i - 1])
+            },
+            if i + 1 < raw_posts.len() {
+                Some(&raw_posts[i + 1])
+            } else {
+                None
+            },
+        )?;
     }
 
     // TODO(swj): How to best ignore dependencies checked into repos?
