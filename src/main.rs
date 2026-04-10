@@ -453,7 +453,7 @@ async fn main() -> Result<()> {
 
     let tmpl = jinja.get_template("index.html")?;
     let index = tmpl.render(minijinja::context! {
-    articles_page =>  ArticlesPage{object_list: recent_articles.iter().take(10).cloned().collect()},
+    articles_page =>  ArticlesPage{object_list: recent_articles.clone()},
     ..base_context.clone()})?;
     std::fs::write(render_path.join("index.html"), index)?;
 
