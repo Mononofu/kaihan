@@ -1,0 +1,28 @@
+name: release
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  linux-x86_64:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release
+      - run: |
+          strip target/release/kaihan
+          tar czf kaihan-linux-x86_64.tar.gz -C target/release kaihan
+      - name: Publish rolling 'latest' release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: latest
+          prerelease: true
+          files: kaihan-linux-x86_64.tar.gz
