@@ -192,11 +192,13 @@ pub struct Highlighter {
     theme: Theme,
 }
 
+const THEME_BYTES: &[u8] = include_bytes!("../themes/stack_overflow.tmTheme");
+
 impl Highlighter {
     pub fn new() -> Result<Self> {
         Ok(Highlighter {
             syntax_set: SyntaxSet::load_defaults_newlines(),
-            theme: ThemeSet::get_theme("themes/stack_overflow.tmTheme")?,
+            theme: ThemeSet::load_from_reader(&mut std::io::Cursor::new(THEME_BYTES))?,
         })
     }
 
